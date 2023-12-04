@@ -1,11 +1,11 @@
 @echo off
 cls
 set PATH=%PATH%;"C:\Program Files\Python"
-:loop_grab_resolutions
+:loop_grab_metadata
 IF %1=="" GOTO completed
-python "G:\My Drive\Projects\Video Resolution\video_resolution.py" --percentage-completion --update-metadata-db %1
+python "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.py" --percentage-completion --update-metadata-db %1
 SHIFT
-GOTO loop_grab_resolutions
+GOTO loop_grab_metadata
 :completed
-sort /R "G:\My Drive\Projects\Video Resolution\video_resolution.txt" /O "G:\My Drive\Projects\Video Resolution\video_resolution.txt"
+sort /R "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.txt" /O "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.txt"
 pause
