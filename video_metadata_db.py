@@ -673,7 +673,7 @@ def threads_query(list_files, file_dimensions, label_volume, path_probe, mode_op
 # Recursively process every directory passed on the command line
 def process_dir(path, file_dimensions, label_volume, path_probe, mode_open, list_files_from_dir,
                 dict_files_failed, percentage_gather):
-	# A filter that tells not to walk through these directories
+	# A filter that tells not to walk through these directories named so
 	filters = ("Extras", "Featurettes", "Soundtrack")
 
 	# Only append the files to a list if it's empty. If we had been asked to report percentage,
