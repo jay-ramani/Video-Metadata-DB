@@ -3,7 +3,7 @@
 ## What This Is
 A multi-threaded Python script that queries video files for metadata and generates a Comma Separated Value database (text format). This CSV file can then be converted (to Open Document Format/Microsoft Excel) or used as-is with any spreadsheet program of choice and sorted as required. This helps identify any specifics or outliers. Personally, I use this to identify video files that can be upgraded to better formats (audio, resolution, bit-rate etc.), or just weed out redundant files.
 
-Tip: Having video files in Matroska format helps greatly, since adding metadata like title and tags does not require re-enconding the video file, and is a breeze to query metadata. For example, converting mp4 to Matroska (a .mkv extension) can be done without re-enccoding the content. All that is required is to convert the container of the content. One could use `Video Container Convert` to achieve this.
+Tip: Having video files in Matroska format helps greatly, since adding metadata like title and tags does not require re-enconding the video file, and is a breeze to query metadata. For example, converting mp4 to Matroska (a .mkv extension) can be done without re-enccoding the content. All that is required is to convert the container of the content. One could use '[Video Container Convert](https://github.com/jay-ramani/video_container_convert)' to achieve this.
 
 While the script queries the following parameters, it can be customized to any number of parameters supported by '[ffprobe](https://www.ffmpeg.org/)'.
 * Width
