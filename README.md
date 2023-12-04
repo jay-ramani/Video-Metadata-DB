@@ -58,9 +58,9 @@ If you'd like a tooltip notification on Windows 10, install [win10toast](https:/
 	sort /R "G:\My Drive\Projects\Video Resolution\video_metadata_db.txt" /O "G:\My Drive\Projects\Video Resolution\video_metadata_db.txt"
 	pause
 ```
-  Note: In the 3rd line above, ensure you set the path correctly for your Python installation, and in the 6th line, the path to where you download this video tagging file to.
+  Note: In the 3rd line above, ensure you set the path correctly for your Python installation, and in the 6th line, the path to where you download the Python script file to.
 
-  Once you're done with the above, all you have to do is right-click on any directory (or even a selection of them!) containing Matroska (.mkv) video files, use 'Send To' to send to the command name saved above ('Video Tagger.cmd', as in the example above), and the script will recursively scan through directories and tag your files with the title parsed from every file's name.
+  Once you're done with the above, all you have to do is right-click on any directory (or even a selection of them!) containing video files, use 'Send To' to send to the command name saved above ('Video Metadata DB Build.cmd', as in the example above), and the script will recursively scan through directories and query metadata from ffprobe supported video files.
   
   I've included this .cmd file as well, so feel free to edit and set parameters according to your installation.
 
@@ -68,7 +68,7 @@ If you'd like a tooltip notification on Windows 10, install [win10toast](https:/
 
 ### Batch Processing Recursively Through a Command
 ```
-  python "C:\Users\You\Video Tagger\video_tagger.py" --percentage-completion <path to a directory containing video files> <path to another directory...> <you get the picture!>
+  python "C:\Users\<user login>\Video Metadata DB\video_metadata_db.py" --percentage-completion <path to a directory containing video files> <path to another directory...> <you get the picture!>
 ```
 
 ## Options
@@ -87,7 +87,7 @@ At the end of its execution, the script presents a summary of files probed, fail
 For a post-mortem, or simply quenching curiosity, a log file is generated with whatever is attempted by the script. This log is generated in the local application data directory (applicable to Windows), under my name (Jay Ramani). For example, this would be `C:\Users\<user login>\AppData\Local\Jay Ramani`.
 
 ## Testing and Reporting Bugs
-The tagger has been tested on Windows 10 and on Manjaro Linux. Would be great if someone can help with testing on other platforms and provide feedback.
+The script has been tested on Windows 10, 11 and on Manjaro Linux. Would be great if someone can help with testing on other platforms and provide feedback.
 
 To report bugs, use the issue tracker with GitHub.
 
