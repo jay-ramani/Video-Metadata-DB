@@ -5,7 +5,7 @@ A multi-threaded Python script that queries video files for metadata and generat
 
 Tip: Having video files in Matroska format helps greatly, since adding metadata like title and tags does not require re-enconding the video file, and is a breeze to query metadata. For example, converting mp4 to Matroska (a .mkv extension) can be done without re-encoding the content. All that is required is to convert the container of the content. One could use '[Video Container Convert](https://github.com/jay-ramani/video_container_convert)' to achieve this.
 
-While the script queries the following parameters, it can be customized to any number of parameters supported by '[ffprobe](https://www.ffmpeg.org/)'.
+While the script queries the following parameters, it can be customized to report any number of parameters supported by '[ffprobe](https://www.ffmpeg.org/)'. Caveat: Higher number of parameters and the number of files queried cause the spreadsheet program to be slower. This is not an inherent flaw of the program itself, but has to do with the size of the data set.
 * Width
 * Height
 * Size (human friendly)
