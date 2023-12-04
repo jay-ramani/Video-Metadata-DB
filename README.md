@@ -84,7 +84,7 @@ Three options are parsed currently, out of which the one for differentially upda
 * `--percentage-completion`, or `-p`: Report the percentage of completion. This comes handy when tagging a large number of files recursively (either with the right-click 'Send To' option, or through the command line). You might want to skip this option if you'd like the script to execute faster.
 * `--merge-metadata`, or `-m`: Merge multiple metadata CSV databases. This is useful when you have multiple CSV metadata files from multiple drives and/or directories and would like to have them all consolidated in a single database. A DOS script is included in the repository to additionally sort the resulting database in descreasing order of horizontal video resolution (the sort can be customised to apply to a field of your choice by modiifying the script).
 * `--update-metadata-db`, or `-u`: Update the resolution statistics file with metadata for selected file(s). This is used to update (only the delta of) selected files. Currenly, **work in progress**, and is not implemented.
-* `--help`, or `-h`: Usage for command line options
+* `--help`, or `-h`: Usage help for command line options
 
 ## Reporting a Summary
 At the end of its execution, the script presents a summary of files probed, failures (if any) and time taken. Again, this comes in handy when dealing with a large number of files.
