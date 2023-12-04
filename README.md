@@ -40,7 +40,7 @@ For example:
 ```
 **Note**: Windows path separators have to be double escaped using another backslash, as shown in the example above. On Linux, unless these tools have already been added to the PATH environment variable, you would have to update the environment, or manually feed the path, however, it is usual for mmpeg to exist in a default installation with the path already covered.
 
-If you'd like a tooltip notification on Windows 10, install [win10toast](https://pypi.org/project/win10toast/) with `pip install win10toast`. Tooltips on Linux are supported natively in the script (thanks to `notify-send`).
+If you'd like a tooltip notification on Windows 10 and above, install [win10toast](https://pypi.org/project/win10toast/) with `pip install win10toast`. Tooltips on Linux are supported natively in the script (thanks to `notify-send`).
 
 ## How to Batch Process/Use on Single Files
 ### Batch Processing Recursively/A Selection Through a Simple Right-Click
@@ -51,11 +51,11 @@ If you'd like a tooltip notification on Windows 10, install [win10toast](https:/
 	set PATH=%PATH%;"C:\Program Files\Python"
 	:loop_grab_metadata
 	IF %1=="" GOTO completed
-	python "G:\My Drive\Projects\Video Resolution\video_metadata_db.py" --percentage-completion %1
+	python "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.py" --percentage-completion %1
 	SHIFT
 	GOTO loop_grab_metadata
 	:completed
-	sort /R "G:\My Drive\Projects\Video Resolution\video_metadata_db.txt" /O "G:\My Drive\Projects\Video Resolution\video_metadata_db.txt"
+	sort /R "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.txt" /O "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.txt"
 	pause
 ```
   Note: In the 3rd line above, ensure you set the path correctly for your Python installation, and in the 6th line, the path to where you download the Python script file to.
@@ -84,7 +84,7 @@ You might want to skip this option if you'd like the script to execute faster.
 At the end of its execution, the script presents a summary of files probed, failures (if any) and time taken. Again, this comes in handy when dealing with a large number of files.
 
 ## Logging
-For a post-mortem, or simply quenching curiosity, a log file is generated with whatever is attempted by the script. This log is generated in the local application data directory (applicable to Windows), under my name (Jay Ramani). For example, this would be `C:\Users\<user login>\AppData\Local\Jay Ramani`.
+For a post-mortem, or simply quenching curiosity, a log file is generated with whatever is attempted by the script. This log is generated in the local application data directory (applicable to Windows), under my name (Jay Ramani). For example, this would be `C:\Users\<user login>\AppData\Local\Jay Ramani\video_metadata_db`.
 
 ## Testing and Reporting Bugs
 The script has been tested on Windows 10, 11 and on Manjaro Linux. Would be great if someone can help with testing on other platforms and provide feedback.
