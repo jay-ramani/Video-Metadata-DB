@@ -71,6 +71,9 @@ If you'd like a tooltip notification on Windows 10 and above, install [win10toas
   python "C:\Users\<user login>\Video Metadata DB\video_metadata_db.py" --percentage-completion <path to a directory containing video files> <path to another directory...> <you get the picture!>
 ```
 
+## Excluding directories from being queried
+Any directory with a specific name requiring to be excluded from being queried can be added to a filter list in the `process_dir()` function. Regardless of which path is recursed into, a directory that matches a filter will be skipped.
+
 ## Options
 Three options are parsed currently, out of which the one for differentially updating the CSV database is work in progress
 
@@ -87,6 +90,7 @@ At the end of its execution, the script presents a summary of files probed, fail
 For a post-mortem, or simply quenching curiosity, a log file is generated with whatever is attempted by the script. This log is generated in the local application data directory (applicable to Windows), under my name (Jay Ramani). For example, this would be `C:\Users\<user login>\AppData\Local\Jay Ramani\video_metadata_db`.
 
 ## Known Issues
+* Bug with reporting the time taken to commit to the database
 
 ## Testing and Reporting Bugs
 The script has been tested on Windows 10, 11 and on Manjaro Linux (XFCE). Would be great if someone can help with testing on other platforms and provide feedback.
