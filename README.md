@@ -83,6 +83,8 @@ You might want to skip this option if you'd like the script to execute faster.
 * Merging multiple metadata CSV databases: `--merge-metadata`, or simply, `-m`. This is useful when you have multiple CSV metadata files from multiple drives and/or directories and would like to have them all consolidated in a single database. A DOS script is included in the repository to additionally sort the resulting database in descreasing order of horizontal video resolution (the sort can be customised to apply to a field of your choice by modiifying the script)
 * Update the resolution statistics file with metadata for selected file(s): `--update-metadata-db`, or simply, `-u`. This is used to update (only the delta of) selected files. Currenly, **work in progress**, and is not implemented.
 
+Usage for command line options is available through the standard Unix `--help` option.
+
 ## Reporting a Summary
 At the end of its execution, the script presents a summary of files probed, failures (if any) and time taken. Again, this comes in handy when dealing with a large number of files.
 
