@@ -13,26 +13,26 @@
 #                   - win10toast (pip install win10toast; for Windows 10 toast notifications)
 # -------------------------------------------------------------------------------
 
+import argparse
+import io
+import itertools
+import logging
+import math
 import mmap
+import multiprocessing
 import os
 import platform
-import multiprocessing
-import io
+import shutil
 import subprocess
 import sys
 import time
-import argparse
-import logging
-import shutil
-import itertools
-import math
-
-from pathlib import Path
-# For tooltip notification on Windows
-from win10toast import ToastNotifier
 # For spawning threads for the I/O bound tagger
 from multiprocessing.dummy import Pool as ThreadPool
-from threading import Thread, Lock
+from pathlib import Path
+from threading import Lock
+
+# For tooltip notification on Windows
+from win10toast import ToastNotifier
 
 # Spawn four threads for each CPU core found
 COUNT_THREADS = multiprocessing.cpu_count() * 4
@@ -54,7 +54,7 @@ def show_toast(tooltip_title, tooltip_message):
 	tooltip_message = os.path.basename(__file__) + ": " + tooltip_message
 
 	if platform.system() == "Linux":
-		os.system("notify-send \"" + tooltip_title + "\" \"" + tooltip_message + "\"")
+		os.system('notify-send "' + tooltip_title + '" "' + tooltip_message + '"')
 	else:
 		toaster = ToastNotifier()
 		toaster.show_toast(tooltip_title, tooltip_message, icon_path = None, duration = 5)
@@ -74,8 +74,8 @@ def total_time_in_hms_get(total_time_ns):
 		hours = round(minutes / 60)
 		minutes = minutes % 60
 
-	# If the quantum is less than a second, we need show a better resolution. A fractional report matters only when
-	# it's less than 1.
+		# If the quantum is less than a second, we need show a better resolution. A fractional report matters only when
+		# it's less than 1.
 	if (not (hours and minutes)) and (seconds_raw < 1 and seconds_raw > 0):
 		# Round off to two decimals
 		seconds = round(seconds_raw, 2)
@@ -84,8 +84,11 @@ def total_time_in_hms_get(total_time_ns):
 		# when it's more than 1.
 		seconds = round(seconds_raw)
 
-	return (str(hours) + " hour(s) " if hours else "") + (str(minutes) + " minute(s) " if minutes else "") + (str(
-		seconds) + " second(s)")
+	return (
+		(str(hours) + " hour(s) " if hours else "")
+		+ (str(minutes) + " minute(s) " if minutes else "")
+		+ (str(seconds) + " second(s)")
+	)
 
 
 # Open a file and log what we do
@@ -93,25 +96,41 @@ def logging_initialize(root):
 	from appdirs import AppDirs
 
 	# Use realpath instead to get through symlinks
-	name_script_executable = os.path.basename(os.path.realpath(__file__)).partition(".")[0]
+	name_script_executable = os.path.basename(os.path.realpath(__file__)).partition(
+		"."
+	)[0]
 	dirs = AppDirs(name_script_executable, "Jay Ramani")
 
 	try:
 		os.makedirs(dirs.user_log_dir, exist_ok = True)
 	except PermissionError:
-		print("\aNo permission to write log files at \'" + dirs.user_log_dir + "\'!")
+		print("\aNo permission to write log files at '" + dirs.user_log_dir + "'!")
 	except:
 		print("\aUndefined exception!")
 		print("Error", sys.exc_info())
 	else:
-		print("Check logging results at \'" + dirs.user_log_dir + "\'\n")
+		print("Check logging results at '" + dirs.user_log_dir + "'\n")
 
 		# All good. Proceed with logging.
-		logging.basicConfig(filename = dirs.user_log_dir + os.path.sep + name_script_executable + " - " +
-		                               time.strftime("%Y%m%d%I%M%S%z") + '.log', level = logging.INFO,
-		                    format = "%(message)s")
-		logging.info("Log beginning at " + time.strftime("%d %b %Y (%a) %I:%M:%S %p %Z (GMT%z)") + " with PID: " + str(
-			os.getpid()) + ", started with arguments " + str(sys.argv) + "\n")
+		logging.basicConfig(
+			filename = dirs.user_log_dir
+			           + os.path.sep
+			           + name_script_executable
+			           + " - "
+			           + time.strftime("%Y%m%d%I%M%S%z")
+			           + ".log",
+			level = logging.INFO,
+			format = "%(message)s",
+		)
+		logging.info(
+			"Log beginning at "
+			+ time.strftime("%d %b %Y (%a) %I:%M:%S %p %Z (GMT%z)")
+			+ " with PID: "
+			+ str(os.getpid())
+			+ ", started with arguments "
+			+ str(sys.argv)
+			+ "\n"
+		)
 
 
 def get_path_probe():
@@ -149,13 +168,13 @@ def get_volume_label(path):
 	return label
 
 
-def sizeof_fmt(num, suffix = 'B'):
-	for unit in ('', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi'):
+def sizeof_fmt(num, suffix = "B"):
+	for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
 		if abs(num) < 1024.0:
 			return "%3.1f%s%s" % (num, unit, suffix)
 		num /= 1024.0
 
-	return "%.1f%s%s" % (num, 'Yi', suffix)
+	return "%.1f%s%s" % (num, "Yi", suffix)
 
 
 # Lock the console and log for exclusive access to print. The caller is to pass True for logging this to the error
@@ -174,7 +193,9 @@ def lock_console_print_and_log(string, stream_error = False):
 # - Tab Separated Values: TSV, like in Comma Separated Values (CSV) format.
 # This is to help analysis with spreadsheet programs or parsing externally
 # in other ways.
-def save_video_information(file_stream, file_video, output_video, output_audio, label_volume):
+def save_video_information(
+	file_stream, file_video, output_video, output_audio, label_volume
+):
 	# Indices to get to the right line in the video output
 	INDEX_OUTPUT_LINE_VIDEO_CODEC_LONG_NAME = 0
 	INDEX_OUTPUT_LINE_VIDEO_WIDTH = 1
@@ -196,10 +217,22 @@ def save_video_information(file_stream, file_video, output_video, output_audio, 
 	# lower than INDEX_OUTPUT_LINE_TITLE indicates something is fishy.
 	if len(lines_video) >= INDEX_OUTPUT_LINE_TITLE:
 		# Check if we have non-zero values for the video dimensions
-		if len(lines_video[INDEX_OUTPUT_LINE_VIDEO_WIDTH]) and len(lines_video[INDEX_OUTPUT_LINE_VIDEO_HEIGHT]):
+		if len(lines_video[INDEX_OUTPUT_LINE_VIDEO_WIDTH]) and len(
+			lines_video[INDEX_OUTPUT_LINE_VIDEO_HEIGHT]
+		):
 			# Write video stream resolution (width and height) information
-			file_stream.write("{:>4}".format(lines_video[INDEX_OUTPUT_LINE_VIDEO_WIDTH].decode("utf-8")) + "\t")
-			file_stream.write("{:>4}".format(lines_video[INDEX_OUTPUT_LINE_VIDEO_HEIGHT].decode("utf-8")) + "\t")
+			file_stream.write(
+				"{:>4}".format(
+					lines_video[INDEX_OUTPUT_LINE_VIDEO_WIDTH].decode("utf-8")
+				)
+				+ "\t"
+			)
+			file_stream.write(
+				"{:>4}".format(
+					lines_video[INDEX_OUTPUT_LINE_VIDEO_HEIGHT].decode("utf-8")
+				)
+				+ "\t"
+			)
 		else:
 			if len(lines_video[INDEX_OUTPUT_LINE_VIDEO_WIDTH]) == 0:
 				# No resolution information available, record zeroes for the width.
@@ -224,16 +257,22 @@ def save_video_information(file_stream, file_video, output_video, output_audio, 
 
 		# Followed by the full codec name
 		# file_stream.write("{:<50}".format(lines_video[INDEX_OUTPUT_LINE_VIDEO_CODEC_LONG_NAME].decode("utf-8")) + "\t")
-		file_stream.write(lines_video[INDEX_OUTPUT_LINE_VIDEO_CODEC_LONG_NAME].decode("utf-8") + "\t")
+		file_stream.write(
+			lines_video[INDEX_OUTPUT_LINE_VIDEO_CODEC_LONG_NAME].decode("utf-8") + "\t"
+		)
 
 		# Followed by the total number of streams [video, audio and subtitles (and possibly
 		# anything else!)]
 		# file_stream.write("{:>3}".format(lines_video[INDEX_OUTPUT_LINE_STREAMS_TOTAL].decode("utf-8")) + "\t")
-		file_stream.write(lines_video[INDEX_OUTPUT_LINE_STREAMS_TOTAL].decode("utf-8") + "\t")
+		file_stream.write(
+			lines_video[INDEX_OUTPUT_LINE_STREAMS_TOTAL].decode("utf-8") + "\t"
+		)
 
 		# Followed by the container's name
 		# file_stream.write("{:<35}".format(lines_video[INDEX_OUTPUT_LINE_VIDEO_FORMAT_CONTAINER].decode("utf-8")) + "\t")
-		file_stream.write(lines_video[INDEX_OUTPUT_LINE_VIDEO_FORMAT_CONTAINER].decode("utf-8") + "\t")
+		file_stream.write(
+			lines_video[INDEX_OUTPUT_LINE_VIDEO_FORMAT_CONTAINER].decode("utf-8") + "\t"
+		)
 
 		## Split each line in the audio output into a tuple element
 		lines_audio = output_audio.splitlines()
@@ -246,11 +285,16 @@ def save_video_information(file_stream, file_video, output_video, output_audio, 
 
 			# Followed by the full audio codec name
 			# file_stream.write("{:<50}".format(lines_audio[INDEX_OUTPUT_LINE_AUDIO_CODEC_LONG_NAME]) + "\t")
-			file_stream.write(lines_audio[INDEX_OUTPUT_LINE_AUDIO_CODEC_LONG_NAME] + "\t")
+			file_stream.write(
+				lines_audio[INDEX_OUTPUT_LINE_AUDIO_CODEC_LONG_NAME] + "\t"
+			)
 		else:
 			lock_console_print_and_log(
-				"No audio stream found in index zero for \'" + file_video +
-				"\'. You might want to check if there is no audio available, or other audio streams.", True)
+				"No audio stream found in index zero for '"
+				+ file_video
+				+ "'. You might want to check if there is no audio available, or other audio streams.",
+				True,
+			)
 
 		# Followed by the file's title currently set in it's metadata. A video file
 		# may not necessarily have it's title tag set; in this case, ensure we
@@ -261,14 +305,39 @@ def save_video_information(file_stream, file_video, output_video, output_audio, 
 			file_stream.write("<Title Not Set>" + "\t")
 		else:
 			# file_stream.write("{:<255}".format(lines_video[INDEX_OUTPUT_LINE_TITLE].decode("utf-8")) + "\t")
-			file_stream.write(lines_video[INDEX_OUTPUT_LINE_TITLE].decode("utf-8") + "\t")
+			file_stream.write(
+				lines_video[INDEX_OUTPUT_LINE_TITLE].decode("utf-8") + "\t"
+			)
 
 		# Put in a field to convey if an external subtitle file exists for the video in question
-		if os.path.exists(file_video.rpartition(os.extsep)[0] + ".en.srt") or os.path.exists(
-			file_video.rpartition(os.extsep)[0] + ".srt"):
+		file_name_subtitle_english = file_video.rpartition(os.extsep)[0] + ".en.srt"
+		file_name_subtitle_english_hearing_impaired = (
+			file_video.rpartition(os.extsep)[0] + ".en.hi.srt"
+		)
+
+		if os.path.exists(file_name_subtitle_english):
 			file_stream.write("Y" + "\t")
+
+			stat = os.stat(file_name_subtitle_english)
+			# file_stream.write("{:>10}".format(sizeof_fmt(stat.st_size)) + "\t")
+			#file_stream.write(sizeof_fmt(stat.st_size) + "\t")
+			file_stream.write(str(stat.st_size) + "\t")
 		else:
 			file_stream.write("N" + "\t")
+			# If a subtitle file doesn't exist, write a blank
+			file_stream.write(" " + "\t")
+
+		if os.path.exists(file_name_subtitle_english_hearing_impaired):
+			file_stream.write("Y" + "\t")
+
+			stat = os.stat(file_name_subtitle_english_hearing_impaired)
+			# file_stream.write("{:>10}".format(sizeof_fmt(stat.st_size)) + "\t")
+			#file_stream.write(sizeof_fmt(stat.st_size) + "\t")
+			file_stream.write(str(stat.st_size) + "\t")
+		else:
+			file_stream.write("N" + "\t")
+			# If a subtitle file doesn't exist, write a blank
+			file_stream.write(" " + "\t")
 
 		# Followed by the parent volume label of the file.
 		# Left justify by 32 characters, to comply with the maximum
@@ -288,22 +357,29 @@ def save_video_information(file_stream, file_video, output_video, output_audio, 
 		file_stream.write(file_video)
 		file_stream.write("\n")
 	else:
-		lock_console_print_and_log("The number lines in the output for \'" + file_video + "\' were only " + str(
-			len(lines_video)) + "! This should be at least " + str(
-			INDEX_OUTPUT_LINE_TITLE) + " lines long, and ideally " + str(
-			INDEX_OUTPUT_LINE_TITLE + 1) + ". Did you pass a .mkv/.mp4 file with audio only stream(s)?",
-		                           True)
+		lock_console_print_and_log(
+			"The number lines in the output for '"
+			+ file_video
+			+ "' were only "
+			+ str(len(lines_video))
+			+ "! This should be at least "
+			+ str(INDEX_OUTPUT_LINE_TITLE)
+			+ " lines long, and ideally "
+			+ str(INDEX_OUTPUT_LINE_TITLE + 1)
+			+ ". Did you pass a .mkv/.mp4 file with audio only stream(s)?",
+			True,
+		)
 
 
 # Print a spacer after every file's processing for sifting through the output
 # and log
 # def print_and_log_spacer(count, path_file):
-#	print(f"----- File {count} -----\n")
-#	print("\'" + path_file + "\'\n")
-#	print(f"----- File {count} processing complete -----\n\n")
-#	logging.info(f"----- File {count} -----\n")
-#	logging.info("\'" + path_file + "\'\n")
-#	logging.info(f"----- File {count} processing complete -----\n\n")
+# 	print(f"----- File {count} -----\n")
+# 	print("\'" + path_file + "\'\n")
+# 	print(f"----- File {count} processing complete -----\n\n")
+# 	logging.info(f"----- File {count} -----\n")
+# 	logging.info("\'" + path_file + "\'\n")
+# 	logging.info(f"----- File {count} processing complete -----\n\n")
 
 
 def query_file_update_check(path_file, file_dimensions):
@@ -349,7 +425,10 @@ def percentage_completion_print(count_processed, count_total):
 	# For every checkpoint defined in CHECKPOINT_FILES_QUERIED, print percentage completion
 	if not (count_processed % CHECKPOINT_FILES_QUERIED):
 		if query_file.total_count_queried < query_file.total_count_percentage:
-			percent_complete = round((query_file.total_count_queried / query_file.total_count_percentage) * 100)
+			percent_complete = round(
+				(query_file.total_count_queried / query_file.total_count_percentage)
+				* 100
+			)
 
 			# When we're close to the total count, round() would ceil the processed count to
 			# 100, which is not accurate. Hence, stall the bump to 100.
@@ -359,7 +438,11 @@ def percentage_completion_print(count_processed, count_total):
 
 			# percent_complete_str = str(percent_complete)
 			percent_complete_str = str(
-				math.floor((query_file.total_count_queried / query_file.total_count_percentage) * 100))
+				math.floor(
+					(query_file.total_count_queried / query_file.total_count_percentage)
+					* 100
+				)
+			)
 
 			# For a large count of total number of files, the percentage of processed files
 			# would initially be zero. There's no point reporting a zero percentage completion;
@@ -389,7 +472,15 @@ def db_name_generate(root, path, label_volume = ""):
 	return root + " - " + label_volume + os.extsep + "tsv", label_volume
 
 
-def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, dict_files_failed, percentage_gather = False):
+def query_file(
+	path_file,
+	file_dimensions,
+	label_volume,
+	path_probe,
+	mode_open,
+	dict_files_failed,
+	percentage_gather = False,
+):
 	root, extension = os.path.splitext(path_file)
 
 	# Grab the part after the extension separator, and convert to lower case.
@@ -400,8 +491,25 @@ def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, 
 
 	# Only process video files
 	if extension in (
-		"av1", "avi", "divx", "mp4", "mkv", "m4v", "mpg", "mpeg", "mov", "rm", "vob", "wmv", "flv", "3gp", "rmvb", "webm",
-		"dat", "mts"):
+		"av1",
+		"avi",
+		"divx",
+		"mp4",
+		"mkv",
+		"m4v",
+		"mpg",
+		"mpeg",
+		"mov",
+		"rm",
+		"vob",
+		"wmv",
+		"flv",
+		"3gp",
+		"rmvb",
+		"webm",
+		"dat",
+		"mts",
+	):
 		# We're only gathering a headcount of files to query. Hence return once we increment the count.
 		if percentage_gather:
 			with mutex_count:
@@ -418,12 +526,16 @@ def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, 
 		if (not file_dimensions) and (not label_volume):
 			root_program, _ = os.path.splitext(sys.argv[0])
 
-			file_dimensions_path, label_volume = db_name_generate(root_program, path_file)
+			file_dimensions_path, label_volume = db_name_generate(
+				root_program, path_file
+			)
 
 			with mutex_file:
 				try:
 					# Open the db for the standalone file in question and keep so for the update below
-					file_dimensions = io.open(file_dimensions_path, mode_open, encoding = "utf-8-sig")
+					file_dimensions = io.open(
+						file_dimensions_path, mode_open, encoding = "utf-8-sig"
+					)
 				except OSError as error_io_open:
 					# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
 					# console access mutex to prevent back and forth locking for successive statements in the block below
@@ -432,9 +544,19 @@ def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, 
 						logging.error("Error", sys.exc_info())
 
 						print(
-							"Could not open \'" + file_dimensions_path + "\'. Aborting processing for \'" + path_file + "\'.")
+							"Could not open '"
+							+ file_dimensions_path
+							+ "'. Aborting processing for '"
+							+ path_file
+							+ "'."
+						)
 						logging.error(
-							"Could not open \'" + file_dimensions_path + "\'. Aborting processing for \'" + path_file + "\'.")
+							"Could not open '"
+							+ file_dimensions_path
+							+ "'. Aborting processing for '"
+							+ path_file
+							+ "'."
+						)
 
 					return
 				else:
@@ -458,52 +580,86 @@ def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, 
 			# otherwise, we'll have to make two runs - one each for video and audio. Until then, oblige.
 
 			# Grab details for the video stream at index 0
-			output_video = subprocess.run((path_probe, "-v", "error", "-select_streams", "v:0", "-show_entries",
-			                               "format_tags=title:format=nb_streams,format_long_name:stream=codec_long_name,width,height",
-			                               "-print_format", "default=noprint_wrappers=1:nokey=1", "-i", path_file),
-			                              stdout = subprocess.PIPE, check = True, universal_newlines = True).stdout
+			output_video = subprocess.run(
+				(
+					path_probe,
+					"-v",
+					"error",
+					"-select_streams",
+					"v:0",
+					"-show_entries",
+					"format_tags=title:format=nb_streams,format_long_name:stream=codec_long_name,width,height",
+					"-print_format",
+					"default=noprint_wrappers=1:nokey=1",
+					"-i",
+					path_file,
+				),
+				stdout = subprocess.PIPE,
+				check = True,
+				universal_newlines = True,
+			).stdout
 
 			# Grab details for the audio stream at index 0
-			output_audio = subprocess.run((path_probe, "-v", "error", "-select_streams", "a:0", "-show_entries",
-			                               "stream=channels,codec_long_name", "-print_format",
-			                               "default=noprint_wrappers=1:nokey=1", "-i", path_file),
-			                              stdout = subprocess.PIPE, check = True, universal_newlines = True).stdout
+			output_audio = subprocess.run(
+				(
+					path_probe,
+					"-v",
+					"error",
+					"-select_streams",
+					"a:0",
+					"-show_entries",
+					"stream=channels,codec_long_name",
+					"-print_format",
+					"default=noprint_wrappers=1:nokey=1",
+					"-i",
+					path_file,
+				),
+				stdout = subprocess.PIPE,
+				check = True,
+				universal_newlines = True,
+			).stdout
 		except subprocess.CalledProcessError as error_probe:
 			# Update the dictionary with which file's probe failed and why
-			dict_files_failed.update({path_file : str(sys.exc_info())})
+			dict_files_failed.update({path_file: str(sys.exc_info())})
 
 			# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
 			# console access mutex to prevent back and forth locking for successive statements in the block below
 			with mutex_console:
 				print(error_probe.output)
 				print(error_probe.stderr)
-				print("Error querying \'" + path_file + "\' for metadata")
+				print("Error querying '" + path_file + "' for metadata")
 				print("Error", sys.exc_info())
 
 				logging.error(error_probe.output)
 				logging.error(error_probe.stderr)
-				logging.error("Error querying file \'" + path_file + "\': " + str(sys.exc_info()))
+				logging.error(
+					"Error querying file '" + path_file + "': " + str(sys.exc_info())
+				)
 
 				print("Command that resulted in the exception: " + str(error_probe.cmd))
-				logging.info("Command that resulted in the exception: " + str(error_probe.cmd))
+				logging.info(
+					"Command that resulted in the exception: " + str(error_probe.cmd)
+				)
 
-			show_toast("Error", "Failed to probe \'" + path_file + "\'. Check the log.")
+			show_toast("Error", "Failed to probe '" + path_file + "'. Check the log.")
 		# Handle any generic exception
 		except:
 			# Update the dictionary with which file's probe failed and why
-			dict_files_failed.update({path_file : str(sys.exc_info())})
+			dict_files_failed.update({path_file: str(sys.exc_info())})
 
 			# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
 			# console access mutex to prevent back and forth locking for successive statements in the block below
 			with mutex_console:
 				print("Undefined exception")
-				print("Error querying \'" + path_file + "\' for metadata")
+				print("Error querying '" + path_file + "' for metadata")
 				print("Error", sys.exc_info())
 
 				logging.error("Undefined exception")
-				logging.error("Error querying file \'" + path_file + "\': " + str(sys.exc_info()))
+				logging.error(
+					"Error querying file '" + path_file + "': " + str(sys.exc_info())
+				)
 
-			show_toast("Error", "Failed to probe \'" + path_file + "\'. Check the log.")
+			show_toast("Error", "Failed to probe '" + path_file + "'. Check the log.")
 		else:
 			with mutex_time:
 				query_file.total_time_queried += time.perf_counter_ns() - time_start
@@ -511,8 +667,13 @@ def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, 
 
 			with mutex_file:
 				# Strip off the trailing newline ffprobe spits in the output, before passing up
-				save_video_information(file_dimensions, path_file, output_video.strip(), output_audio.strip(),
-				                       label_volume)
+				save_video_information(
+					file_dimensions,
+					path_file,
+					output_video.strip(),
+					output_audio.strip(),
+					label_volume,
+				)
 
 			with mutex_time:
 				query_file.total_time_db_save += time.perf_counter_ns() - time_start
@@ -523,8 +684,17 @@ def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, 
 
 			# print_and_log_spacer(query_file.count, path_file)
 			lock_console_print_and_log(
-				"Got metadata for file# " + "{:>4}".format(query_file.total_count_queried) + ((" of " + str(
-					query_file.total_count_percentage)) if query_file.total_count_percentage else "") + ": \'" + path_file + "\'\n")
+				"Got metadata for file# "
+				+ "{:>4}".format(query_file.total_count_queried)
+				+ (
+					(" of " + str(query_file.total_count_percentage))
+					if query_file.total_count_percentage
+					else ""
+				)
+				+ ": '"
+				+ path_file
+				+ "'\n"
+			)
 
 			# If the database was opened for a standalone file, close it
 			if db_open_standalone_file:
@@ -534,39 +704,42 @@ def query_file(path_file, file_dimensions, label_volume, path_probe, mode_open, 
 		with mutex_count:
 			if query_file.total_count_percentage:
 				with mutex_console:
-					percentage_completion_print(query_file.total_count_queried, query_file.total_count_percentage)
+					percentage_completion_print(
+						query_file.total_count_queried,
+						query_file.total_count_percentage,
+					)
 
 
 # Probe all audio streams
-#		try:
-#			# Probe the file for multiple audio streams. Done for accounting which
-#			# file is hosting language audio not of interest, or even stereo audio,
-#			# when surround is available.
-#			print("Audio stream(s) for \'" + path_file + "\':")
-#			logging.info("Audio stream(s) for \'" + path_file + "\':")
+# 		try:
+# 			# Probe the file for multiple audio streams. Done for accounting which
+# 			# file is hosting language audio not of interest, or even stereo audio,
+# 			# when surround is available.
+# 			print("Audio stream(s) for \'" + path_file + "\':")
+# 			logging.info("Audio stream(s) for \'" + path_file + "\':")
 #
-#			#output = subprocess.check_output([path_probe, "-v", "error", "-show_entries",
-#			#                                  "stream=index,codec_name,codec_long_name,channels,channel_layout,sample_rate,codec_type:stream_tags=language,title",
-#			#                                  "-select_streams", "a", "-of", "default=noprint_wrappers=1", path_file],
-#			#                                 universal_newlines=True)
-#			output = subprocess.check_output([path_probe, "-v", "error", "-show_entries",
-#			                                  "stream=codec_type",
-#			                                  "-select_streams", "a", "-of", "default=noprint_wrappers=1:nokey=1", path_file],
-#			                                 universal_newlines=True)
+# 			#output = subprocess.check_output([path_probe, "-v", "error", "-show_entries",
+# 			#                                  "stream=index,codec_name,codec_long_name,channels,channel_layout,sample_rate,codec_type:stream_tags=language,title",
+# 			#                                  "-select_streams", "a", "-of", "default=noprint_wrappers=1", path_file],
+# 			#                                 universal_newlines=True)
+# 			output = subprocess.check_output([path_probe, "-v", "error", "-show_entries",
+# 			                                  "stream=codec_type",
+# 			                                  "-select_streams", "a", "-of", "default=noprint_wrappers=1:nokey=1", path_file],
+# 			                                 universal_newlines=True)
 #
-#			print(output)
-#			logging.info(output)
+# 			print(output)
+# 			logging.info(output)
 #
 #
-#		except subprocess.CalledProcessError as error_probe:
-#			print(error_probe.output)
-#			print(error_probe.stderr)
-#			print("Error querying " + path_file + " for audio stream(s)")
-#			print("Error", sys.exc_info())
+# 		except subprocess.CalledProcessError as error_probe:
+# 			print(error_probe.output)
+# 			print(error_probe.stderr)
+# 			print("Error querying " + path_file + " for audio stream(s)")
+# 			print("Error", sys.exc_info())
 #
-#			logging.error(error_probe.output)
+# 			logging.error(error_probe.output)
 #        logging.error(error_probe.stderr)
-#			logging.error("Error querying file " + path_file + str(sys.exc_info()))
+# 			logging.error("Error querying file " + path_file + str(sys.exc_info()))
 
 query_file.total_count_files = 0
 query_file.total_count_queried = 0
@@ -585,7 +758,7 @@ def file_dimensions_sort(file_dimensions_path):
 		option_output = "/O"
 		# Since the path string is Unicode, it's required to convert "\"" to "\\".
 		# Else, the sorting command below will fail accessing the path.
-		file_dimensions_path = file_dimensions_path.replace('\\', '\\\\')
+		file_dimensions_path = file_dimensions_path.replace("\\", "\\\\")
 	else:
 		binary_sort = "sort"
 		option_reverse = ""
@@ -598,18 +771,29 @@ def file_dimensions_sort(file_dimensions_path):
 	# Proceed only if we detected the sort command on a supported OS
 	try:
 		output = subprocess.run(
-			(binary_sort, option_reverse, file_dimensions_path, option_output, file_dimensions_path),
-			stdout = subprocess.PIPE, check = True, universal_newlines = True).stdout
+			(
+				binary_sort,
+				option_reverse,
+				file_dimensions_path,
+				option_output,
+				file_dimensions_path,
+			),
+			stdout = subprocess.PIPE,
+			check = True,
+			universal_newlines = True,
+		).stdout
 	except subprocess.CalledProcessError as error_sort:
 		print(error_sort.output)
 		print(error_sort.stderr)
 		logging.error(error_sort.output)
 		logging.error(error_sort.stderr)
 
-		print("Error sorting \'" + file_dimensions_path + "\'")
+		print("Error sorting '" + file_dimensions_path + "'")
 		print("Error", sys.exc_info())
 
-		logging.error("Error sorting file \'" + file_dimensions_path + "\'" + str(sys.exc_info()))
+		logging.error(
+			"Error sorting file '" + file_dimensions_path + "'" + str(sys.exc_info())
+		)
 	else:
 		time_end = time.monotonic_ns()
 
@@ -619,11 +803,17 @@ def file_dimensions_sort(file_dimensions_path):
 		error = False
 
 		print(
-			"Sorted \'" + file_dimensions_path + "\' in descending order of resolution stats in " + total_time_in_hms_get(
-				time_end - time_start))
+			"Sorted '"
+			+ file_dimensions_path
+			+ "' in descending order of resolution stats in "
+			+ total_time_in_hms_get(time_end - time_start)
+		)
 		logging.info(
-			"Sorted \'" + file_dimensions_path + "\' in descending order of resolution stats in " + total_time_in_hms_get(
-				time_end - time_start))
+			"Sorted '"
+			+ file_dimensions_path
+			+ "' in descending order of resolution stats in "
+			+ total_time_in_hms_get(time_end - time_start)
+		)
 
 	return error
 
@@ -633,10 +823,12 @@ def file_dimensions_sort(file_dimensions_path):
 def sound_utf8_warning():
 	print(
 		"** Important: Non-ASCII characters in path and the video title require a UTF-8 enabled console/command prompt "
-		"for reading and writing tags properly **\n\n")
+		"for reading and writing tags properly **\n\n"
+	)
 	logging.info(
 		"** Important: Non-ASCII characters in path and the video title require a UTF-8 enabled console/command prompt "
-		"for reading and writing tags properly **\n\n")
+		"for reading and writing tags properly **\n\n"
+	)
 
 
 # Parse command line arguments and return option and/or values of action
@@ -644,37 +836,88 @@ def cmd_line_parse(opt_update, opt_merge, opt_percentage):
 	parser = argparse.ArgumentParser(
 		description = "Reads metadata (resolution, size, title, etc.) from video files and dumps all in a tab "
 		              "separated values (TSV) file, which can be opened with any program dealing in spreadsheets",
-		add_help = True)
-	parser.add_argument("-p", opt_percentage, required = False, action = "store_true",
-	                    default = None, dest = "percentage",
-	                    help = "Show the percentage of files completed (not the actual data processed; just the files")
+		add_help = True,
+	)
+	parser.add_argument(
+		"-p",
+		opt_percentage,
+		required = False,
+		action = "store_true",
+		default = None,
+		dest = "percentage",
+		help = "Show the percentage of files completed (not the actual data processed; just the files",
+	)
 
 	db_operate = parser.add_mutually_exclusive_group()
-	db_operate.add_argument("-u", opt_update, required = False, action = "store_true", default = False,
-	                        dest = "update_metadata_db",
-	                        help = "Update the resolution statistics file with metadata for selected file(s)")
-	db_operate.add_argument("-m", opt_merge, required = False, action = "store_true", default = False,
-	                        dest = "merge_metadata",
-	                        help = "Consolidates multiple (TSV) metadata files into a single file")
+	db_operate.add_argument(
+		"-u",
+		opt_update,
+		required = False,
+		action = "store_true",
+		default = False,
+		dest = "update_metadata_db",
+		help = "Update the resolution statistics file with metadata for selected file(s)",
+	)
+	db_operate.add_argument(
+		"-m",
+		opt_merge,
+		required = False,
+		action = "store_true",
+		default = False,
+		dest = "merge_metadata",
+		help = "Consolidates multiple (TSV) metadata files into a single file",
+	)
 
 	result_parse, files_to_process = parser.parse_known_args()
 
-	return result_parse.update_metadata_db, result_parse.merge_metadata, result_parse.percentage, files_to_process
+	return (
+		result_parse.update_metadata_db,
+		result_parse.merge_metadata,
+		result_parse.percentage,
+		files_to_process,
+	)
 
 
 # Spawn a pool of threads to query metadata
-def threads_query(list_files, file_dimensions, label_volume, path_probe, mode_open, dict_files_failed, percentage_gather):
+def threads_query(
+	list_files,
+	file_dimensions,
+	label_volume,
+	path_probe,
+	mode_open,
+	dict_files_failed,
+	percentage_gather,
+):
 	with ThreadPool(COUNT_THREADS) as pool:
-		pool.starmap(query_file, zip(list_files, itertools.repeat(file_dimensions), itertools.repeat(label_volume),
-		                             itertools.repeat(path_probe), itertools.repeat(mode_open),
-		                             itertools.repeat(dict_files_failed), itertools.repeat(percentage_gather)))
+		pool.starmap(
+			query_file,
+			zip(
+				list_files,
+				itertools.repeat(file_dimensions),
+				itertools.repeat(label_volume),
+				itertools.repeat(path_probe),
+				itertools.repeat(mode_open),
+				itertools.repeat(dict_files_failed),
+				itertools.repeat(percentage_gather),
+			),
+		)
 
 
 # Recursively process every directory passed on the command line
-def process_dir(path, file_dimensions, label_volume, path_probe, mode_open, list_files_from_dir,
-                dict_files_failed, percentage_gather):
-	# A filter that tells not to walk through these directories named so
-	filters = ("Extras", "Featurettes", "Soundtrack")
+def process_dir(
+	path,
+	file_dimensions,
+	label_volume,
+	path_probe,
+	mode_open,
+	list_files_from_dir,
+	dict_files_failed,
+	percentage_gather,
+):
+	# A filter that tells not to walk through over the files in these directories named so.
+	# TODO: If a sub-directory exists within any of the named ones in this list, it would still
+	# have to be explicitly added.
+	filters = ("Extras", "Featurettes", "Soundtrack", "Storyboards")
 
 	# Only append the files to a list if it's empty. If we had been asked to report percentage,
 	# the list would already be populated with paths of files to process.
@@ -688,18 +931,40 @@ def process_dir(path, file_dimensions, label_volume, path_probe, mode_open, list
 					list_files_from_dir.append(os.path.join(path_dir, file_name))
 			else:
 				print(
-					"Directory filter \'" + os.path.basename(
-						path_dir) + "\' flagged; skipping \'" + path_dir + "\'\n")
+					"Directory filter '"
+					+ os.path.basename(path_dir)
+					+ "' flagged; skipping '"
+					+ path_dir
+					+ "'\n"
+				)
 				logging.info(
-					"Directory filter \'" + os.path.basename(
-						path_dir) + "\' flagged; skipping \'" + path_dir + "\'\n")
+					"Directory filter '"
+					+ os.path.basename(path_dir)
+					+ "' flagged; skipping '"
+					+ path_dir
+					+ "'\n"
+				)
 
-	threads_query(list_files_from_dir, file_dimensions, label_volume, path_probe, mode_open,
-	              dict_files_failed, percentage_gather)
+	threads_query(
+		list_files_from_dir,
+		file_dimensions,
+		label_volume,
+		path_probe,
+		mode_open,
+		dict_files_failed,
+		percentage_gather,
+	)
 
 
 # Process every path (irrespective of being a directory, or file) passed on the command line
-def process_path(files_to_process, root, path_probe, mode_open, list_files_from_dir, percentage_gather = False):
+def process_path(
+	files_to_process,
+	root,
+	path_probe,
+	mode_open,
+	list_files_from_dir,
+	percentage_gather = False,
+):
 	dict_files_failed = {}
 	exit_code = 0
 	file_standalone_path = None
@@ -707,10 +972,20 @@ def process_path(files_to_process, root, path_probe, mode_open, list_files_from_
 	for path in files_to_process:
 		file_dimensions_path, label_volume = db_name_generate(root, path)
 
-		with io.open(file_dimensions_path, mode_open, encoding = "utf-8-sig") as file_dimensions:
+		with io.open(
+			file_dimensions_path, mode_open, encoding = "utf-8-sig"
+		) as file_dimensions:
 			if os.path.isdir(path):
-				process_dir(path, file_dimensions, label_volume, path_probe, mode_open, list_files_from_dir,
-				            dict_files_failed, percentage_gather)
+				process_dir(
+					path,
+					file_dimensions,
+					label_volume,
+					path_probe,
+					mode_open,
+					list_files_from_dir,
+					dict_files_failed,
+					percentage_gather,
+				)
 			else:
 				# We got a standalone file, process it below
 				file_standalone_path = path
@@ -720,16 +995,30 @@ def process_path(files_to_process, root, path_probe, mode_open, list_files_from_
 				# The volume label and database name for standalone files could be anything as they are passed on the
 				# command line as an independent path, rather than a directory to be recursed. Hence, for such files,
 				# the onus will be on the querying routine to handle these parameters appropriately.
-				query_file(file_standalone_path, None, None, path_probe, mode_open, dict_files_failed, percentage_gather)
+				query_file(
+					file_standalone_path,
+					None,
+					None,
+					path_probe,
+					mode_open,
+					dict_files_failed,
+					percentage_gather,
+				)
 			else:
 				if file_standalone_path:
 					# The mode option was not provided with a value to update. Crib.
 					print(
-						"\aOnly directories are queried for building a db from scratch. File \'" + file_standalone_path +
-						"\'" + "will not be queried unless used only with the option to update the db.\n\n")
+						"\aOnly directories are queried for building a db from scratch. File '"
+						+ file_standalone_path
+						+ "'"
+						+ "will not be queried unless used only with the option to update the db.\n\n"
+					)
 					logging.error(
-						"\aOnly directories are queried for building a db from scratch. File \'" + file_standalone_path +
-						"\'" + "will not be queried unless used only with the option to update the db.\n\n")
+						"\aOnly directories are queried for building a db from scratch. File '"
+						+ file_standalone_path
+						+ "'"
+						+ "will not be queried unless used only with the option to update the db.\n\n"
+					)
 
 			# Once we're done writing dimensions for processed videos, sort the output file
 			if file_dimensions_sort(file_dimensions_path):
@@ -740,21 +1029,37 @@ def process_path(files_to_process, root, path_probe, mode_open, list_files_from_
 			# The accumulated time reported through time.perf_counter_ns() seems to be 10 times the actual time
 			# taken! Scale accordingly before we pass it on to the user.
 			if query_file.total_count_queried:
-				print("\nQueried a total of " + str(query_file.total_count_queried) + "/" + str(
-					query_file.total_count_files) + " files in " + total_time_in_hms_get(
-					query_file.total_time_queried / 10) + " and took " + total_time_in_hms_get(
-					query_file.total_time_db_save / 10) + " to commit details to the database")
-				logging.info("\nQueried a total of " + str(query_file.total_count_queried) + "/" + str(
-					query_file.total_count_files) + " files in " + total_time_in_hms_get(
-					query_file.total_time_queried / 10) + " and took " + total_time_in_hms_get(
-					query_file.total_time_db_save / 10) + " to commit details to the database")
+				print(
+					"\nQueried a total of "
+					+ str(query_file.total_count_queried)
+					+ "/"
+					+ str(query_file.total_count_files)
+					+ " files in "
+					+ total_time_in_hms_get(query_file.total_time_queried / 10)
+					+ " and took "
+					+ total_time_in_hms_get(query_file.total_time_db_save / 10)
+					+ " to commit details to the database"
+				)
+				logging.info(
+					"\nQueried a total of "
+					+ str(query_file.total_count_queried)
+					+ "/"
+					+ str(query_file.total_count_files)
+					+ " files in "
+					+ total_time_in_hms_get(query_file.total_time_queried / 10)
+					+ " and took "
+					+ total_time_in_hms_get(query_file.total_time_db_save / 10)
+					+ " to commit details to the database"
+				)
 			else:
-				print("No files to query under '" +  path + "'")
+				print("No files to query under '" + path + "'")
 
 	# Print a summary of failures
 	if dict_files_failed:
 		print("\a\n\nHere's a list of files that failed probing with the reason:\n")
-		logging.info("\n\nHere's a list of files that failed probing with the reason:\n")
+		logging.info(
+			"\n\nHere's a list of files that failed probing with the reason:\n"
+		)
 
 		for file, reason in dict_files_failed.items():
 			print("File  : " + file)
@@ -777,8 +1082,8 @@ def files_merge(list_files, target):
 		# Close the stream to flush buffers (and hence commit)
 		handle_write.close()
 
-	print("Merged \'" + str(list_files) + "\' into \'" + target + "\'")
-	logging.info("Merged \'" + str(list_files) + "\' into \'" + target + "\'")
+	print("Merged '" + str(list_files) + "' into '" + target + "'")
+	logging.info("Merged '" + str(list_files) + "' into '" + target + "'")
 
 
 # Merge metadata dbs for video files from various disks/volumes
@@ -791,8 +1096,8 @@ def db_metadata_merge(root, files_to_process):
 		# Check if the files in question exist
 		if not os.path.exists(file):
 			# If there's even a single file that's bogus, bolt out
-			print("\aInvalid/inaccessible file: \'" + file + "\'\n")
-			logging.error("Invalid/inaccessible file: \'" + file + "\'\n")
+			print("\aInvalid/inaccessible file: '" + file + "'\n")
+			logging.error("Invalid/inaccessible file: '" + file + "'\n")
 
 			merge = False
 			exit_code = 1
@@ -832,6 +1137,11 @@ def db_metadata_merge(root, files_to_process):
 			handle_db_header.write("Audio Codec Name (@Index 0)" + "\t")
 			handle_db_header.write("Title" + "\t")
 			handle_db_header.write("Ext. English Subtitle Availability" + "\t")
+			handle_db_header.write("Ext. English Subtitle Size" + "\t")
+			handle_db_header.write(
+				"Ext. Hearing Impaired English Subtitle Availability" + "\t"
+			)
+			handle_db_header.write("Ext. Hearing Impaired English Subtitle Size" + "\t")
 			handle_db_header.write("Volume Label" + "\t")
 			handle_db_header.write("Path on Drive Label\n")
 
@@ -860,13 +1170,13 @@ def db_metadata_merge(root, files_to_process):
 		if os.path.exists(db_name_merged_temp):
 			os.remove(db_name_merged_temp)
 
-			print("Deleted temporary file \'" + db_name_merged_temp + "\'")
-			logging.info("Deleted temporary file \'" + db_name_merged_temp + "\'")
+			print("Deleted temporary file '" + db_name_merged_temp + "'")
+			logging.info("Deleted temporary file '" + db_name_merged_temp + "'")
 		if os.path.exists(db_name_header):
 			os.remove(db_name_header)
 
-			print("Deleted temporary file \'" + db_name_header + "\'")
-			logging.info("Deleted temporary file \'" + db_name_header + "\'")
+			print("Deleted temporary file '" + db_name_header + "'")
+			logging.info("Deleted temporary file '" + db_name_header + "'")
 
 	return exit_code
 
@@ -875,8 +1185,16 @@ def db_metadata_merge(root, files_to_process):
 def cwd_change(dir):
 	os.chdir(os.path.dirname(os.path.abspath(dir)))
 
-	print("Changing working directory to \'" + os.path.dirname(os.path.abspath(dir)) + "\'...\n")
-	logging.info("Changing working directory to \'" + os.path.dirname(os.path.abspath(dir)) + "\'...\n")
+	print(
+		"Changing working directory to '"
+		+ os.path.dirname(os.path.abspath(dir))
+		+ "'...\n"
+	)
+	logging.info(
+		"Changing working directory to '"
+		+ os.path.dirname(os.path.abspath(dir))
+		+ "'...\n"
+	)
 
 
 def main(argv):
@@ -892,8 +1210,9 @@ def main(argv):
 		opt_merge = "--merge-metadata"
 		opt_percentage = "--percentage-completion"
 
-		update_metadata, merge_metadata, percentage_show, files_to_process = cmd_line_parse(opt_update, opt_merge,
-		                                                                                    opt_percentage)
+		update_metadata, merge_metadata, percentage_show, files_to_process = (
+			cmd_line_parse(opt_update, opt_merge, opt_percentage)
+		)
 
 		if files_to_process:
 			# Remove duplicates from the source path(s)
@@ -901,9 +1220,23 @@ def main(argv):
 
 			if percentage_show and (update_metadata or merge_metadata):
 				print(
-					"Option \'" + opt_percentage + "\' cannot be applied along with \'" + opt_update + "\' or \'" + opt_merge + "\'")
+					"Option '"
+					+ opt_percentage
+					+ "' cannot be applied along with '"
+					+ opt_update
+					+ "' or '"
+					+ opt_merge
+					+ "'"
+				)
 				logging.info(
-					"Option \'" + opt_percentage + "\' cannot be applied along with \'" + opt_update + "\' or \'" + opt_merge + "\'")
+					"Option '"
+					+ opt_percentage
+					+ "' cannot be applied along with '"
+					+ opt_update
+					+ "' or '"
+					+ opt_merge
+					+ "'"
+				)
 			else:
 				cwd_change(sys.argv[0])
 
@@ -936,12 +1269,22 @@ def main(argv):
 							# To report progress in percent, we need to gather the headcount of files to query
 							percentage_gather = True
 
-							print("Gathering file count for reporting percentage...\n\n")
-							logging.info("Gathering file count for reporting percentage...\n\n")
+							print(
+								"Gathering file count for reporting percentage...\n\n"
+							)
+							logging.info(
+								"Gathering file count for reporting percentage...\n\n"
+							)
 
 							# No need to check for the return value; it's just a count we're getting
-							process_path(files_to_process, root, path_probe, mode_open, list_files_from_dir,
-							             percentage_gather)
+							process_path(
+								files_to_process,
+								root,
+								path_probe,
+								mode_open,
+								list_files_from_dir,
+								percentage_gather,
+							)
 
 							# We've already gathered the headcount, so flag accordingly
 							percentage_gather = False
@@ -949,12 +1292,18 @@ def main(argv):
 						print("\nInitiating probing...\n\n")
 						logging.info("\nInitiating probing...\n\n")
 
-						if process_path(files_to_process, root, path_probe, mode_open, list_files_from_dir,
-						                percentage_gather):
+						if process_path(
+							files_to_process,
+							root,
+							path_probe,
+							mode_open,
+							list_files_from_dir,
+							percentage_gather,
+						):
 							exit_code = 1
 					else:
-						print("\a\'" + path_probe + "\' not found")
-						logging.error("\'" + path_probe + "\' not found")
+						print("\a'" + path_probe + "' not found")
+						logging.error("'" + path_probe + "' not found")
 
 						exit_code = 1
 		else:
@@ -973,5 +1322,5 @@ def main(argv):
 	return exit_code
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 	main(sys.argv)
