@@ -8,19 +8,24 @@ Tip: Having video files in Matroska format helps greatly, since adding metadata 
 While the script queries the following parameters, it can be customized to report any number of parameters supported by '[ffprobe](https://www.ffmpeg.org/)'. Caveat: Higher number of parameters and the number of files queried cause the spreadsheet program to be slower. This is not an inherent flaw of the program itself, but has to do with the size of the data set.
 * Width
 * Height
+* Duration (of video stream)
 * Size (human friendly)
-* Raw Size (in bytes)
-* Video Codec Name
-* Total Number of Streams
-* Container Name
-* Number of Audio Channels (@Index 0)
-* Audio Codec Name (@Index 0)
+* Raw size (in bytes)
+* Video codec name
+* AV1/HEVC candidate for compression (if not already in one of these formats)
+* Total number of streams
+* Container name
+* Number of audio channels (@Index 0)
+* Audio codec name (@Index 0)
 * Title
-* Ext. English Subtitle Availability
-* Volume Label
-* Path on Drive Label
+* External English subtitle availability (in srt format)
+* Size of the above external English language subtitle
+* External English subtitle availability for the hearing imparied (in srt format)
+* Size of the above external English language subtitle for the hearing impaired
+* Volume label
+* Path on drive label
 
-**Note**: Use a Python 3.6 environment or above to execute the script.
+**Note**: Use a Python 3.12 environment or above to execute the script.
 
 ## External Tools Used
 Obviously, [Python](https://www.python.org) is used to interpret the script itself. The probing code uses ('[ffprobe](https://www.ffmpeg.org/)' to query metadata.
@@ -55,11 +60,10 @@ If you'd like a tooltip notification on Windows 10 and above, install [win10toas
 	set PATH=%PATH%;"C:\Program Files\Python"
 	:loop_grab_metadata
 	IF %1=="" GOTO completed
-	python "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.py" --percentage-completion %1
+	python "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.py" --percentage-completion --nomedia-create --verbose %1
 	SHIFT
 	GOTO loop_grab_metadata
 	:completed
-	sort /R "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.txt" /O "G:\My Drive\Projects\Video Metadata DB\video_metadata_db.txt"
 	pause
 ```
   Note: In the 3rd line above, ensure you set the path correctly for your Python installation, and in the 6th line, the path to where you download the Python script file to.
@@ -72,18 +76,20 @@ If you'd like a tooltip notification on Windows 10 and above, install [win10toas
 
 ### Batch Processing Recursively Through a Command
 ```
-  python "C:\Users\<user login>\Video Metadata DB\video_metadata_db.py" --percentage-completion <path to a directory containing video files> <path to another directory...> <you get the picture!>
+  python "C:\Users\<user login>\Video Metadata DB\video_metadata_db.py" --percentage-completion --nomedia-create --verbose <path to a directory containing video files> <path to another directory...> <you get the picture!>
 ```
 
 ## Excluding directories from being queried
 Any directory with a specific name requiring to be excluded from being queried can be added to a filter list in the `process_dir()` function. Regardless of which path is recursed into, a directory that matches a filter will be skipped.
 
 ## Options
-Three options are parsed currently, out of which the one for differentially updating the CSV database is work in progress
+The following options are parsed currently, out of which the one for differentially updating the CSV database is work in progress
 
 * `--percentage-completion`, or `-p`: Report the percentage of completion. This comes handy when tagging a large number of files recursively (either with the right-click 'Send To' option, or through the command line). You might want to skip this option if you'd like the script to execute faster.
 * `--merge-metadata`, or `-m`: Merge multiple metadata CSV databases. This is useful when you have multiple CSV metadata files from multiple drives and/or directories and would like to have them all consolidated in a single database. A DOS script is included in the repository to additionally sort the resulting database in descreasing order of horizontal video resolution (the sort can be customised to apply to a field of your choice by modiifying the script).
 * `--update-metadata-db`, or `-u`: Update the resolution statistics file with metadata for selected file(s). This is used to update (only the delta of) selected files. Currenly, **work in progress**, and is not implemented.
+* `--nomedia-create`, or `-n`: Create a .nomedia file under directories to be filtered from media scrapers to assist programs like Kodi
+* `--verbose`, or `-v`: Report non-error messages
 * `--help`, or `-h`: Usage help for command line options
 
 ## Reporting a Summary
