@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------
 
 import argparse
+import codecs
+import csv
 import io
 import itertools
 import logging
@@ -22,7 +24,6 @@ import mmap
 import multiprocessing
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import time
@@ -43,6 +44,10 @@ mutex_console = Lock()
 mutex_file = Lock()
 mutex_list_files_failed_probe = Lock()
 
+# A list that will be populated with video titles while detecting
+# variants, and later used for reporting
+list_file_names = []
+
 
 def is_supported_platform():
 	return platform.system() == "Windows" or platform.system() == "Linux"
@@ -60,9 +65,8 @@ def show_toast(tooltip_title, tooltip_message):
 		toaster.show_toast(tooltip_title, tooltip_message, icon_path = None, duration = 5)
 
 
-# Convert the time in nanoseconds passed in, and return hours, minutes and seconds as a string
-def total_time_in_hms_get(total_time_ns):
-	seconds_raw = total_time_ns / 1000000000
+# Convert the time in seconds passed in, and return hours, minutes and seconds as a string
+def total_time_in_hms_get_for_seconds(seconds_raw, concise = False):
 	seconds = round(seconds_raw)
 	hours = minutes = 0
 
@@ -74,8 +78,8 @@ def total_time_in_hms_get(total_time_ns):
 		hours = round(minutes / 60)
 		minutes = minutes % 60
 
-		# If the quantum is less than a second, we need show a better resolution. A fractional report matters only when
-		# it's less than 1.
+	# If the quantum is less than a second, we need show a better resolution. A fractional report matters only when
+	# it's less than 1.
 	if (not (hours and minutes)) and (seconds_raw < 1 and seconds_raw > 0):
 		# Round off to two decimals
 		seconds = round(seconds_raw, 2)
@@ -84,11 +88,26 @@ def total_time_in_hms_get(total_time_ns):
 		# when it's more than 1.
 		seconds = round(seconds_raw)
 
-	return (
-		(str(hours) + " hour(s) " if hours else "")
-		+ (str(minutes) + " minute(s) " if minutes else "")
-		+ (str(seconds) + " second(s)")
-	)
+	if concise:
+		return ((str(hours) + "h:" if hours else "")
+			+ (str(minutes) + "m:" if minutes else "")
+			+ (str(seconds) + "s")
+		)
+	else:
+		return (
+			(str(hours) + " hour(s) " if hours else "")
+			+ (str(minutes) + " minute(s) " if minutes else "")
+			+ (str(seconds) + " second(s)")
+		)
+
+
+# Convert the time in micro-seconds passed in, and return hours, minutes and seconds as a string
+def total_time_in_hms_get_for_seconds_micro(total_time_us, concise = False):
+	return total_time_in_hms_get_for_seconds(total_time_us / 1000000, concise)
+
+# Convert the time in nano-seconds passed in, and return hours, minutes and seconds as a string
+def total_time_in_hms_get_for_seconds_nano(total_time_ns, concise = False):
+	return total_time_in_hms_get_for_seconds(total_time_ns / 1000000000, concise)
 
 
 # Open a file and log what we do
@@ -117,7 +136,7 @@ def logging_initialize(root):
 			           + os.path.sep
 			           + name_script_executable
 			           + " - "
-			           + time.strftime("%Y%m%d%I%M%S%z")
+			           + time.strftime("%Y%m%d%H%M%S%z")
 			           + ".log",
 			level = logging.INFO,
 			format = "%(message)s",
@@ -202,7 +221,8 @@ def save_video_information(
 	INDEX_OUTPUT_LINE_VIDEO_HEIGHT = 2
 	INDEX_OUTPUT_LINE_STREAMS_TOTAL = 3
 	INDEX_OUTPUT_LINE_VIDEO_FORMAT_CONTAINER = 4
-	INDEX_OUTPUT_LINE_TITLE = 5
+	INDEX_OUTPUT_LINE_VIDEO_DURATION = 5
+	INDEX_OUTPUT_LINE_TITLE = 6
 
 	# Indices to get to the right line in the audio output
 	INDEX_OUTPUT_LINE_AUDIO_CODEC_LONG_NAME = 0
@@ -246,6 +266,18 @@ def save_video_information(
 				# to sort the output.
 				file_stream.write("{:>04}".format("") + "\t")
 
+		# Followed by the duration of the video stream
+		duration_video = lines_video[INDEX_OUTPUT_LINE_VIDEO_DURATION].decode("utf-8")
+		# Sometimes ffprobe does not report video stream duration and instead spits "N/A". So check.
+		if duration_video != "N/A":
+			# We got a proper number
+			duration_video = total_time_in_hms_get_for_seconds_micro(float(duration_video) * 1000000, True)
+		else:
+			# Drat! A non-numeric string! Relay the probe's output as-is.
+			duration_video = lines_video[INDEX_OUTPUT_LINE_VIDEO_DURATION].decode("utf-8")
+
+		file_stream.write(duration_video + "\t")
+
 		# Followed by the file's size
 		stat = os.stat(file_video)
 		# file_stream.write("{:>10}".format(sizeof_fmt(stat.st_size)) + "\t")
@@ -257,9 +289,19 @@ def save_video_information(
 
 		# Followed by the full codec name
 		# file_stream.write("{:<50}".format(lines_video[INDEX_OUTPUT_LINE_VIDEO_CODEC_LONG_NAME].decode("utf-8")) + "\t")
-		file_stream.write(
-			lines_video[INDEX_OUTPUT_LINE_VIDEO_CODEC_LONG_NAME].decode("utf-8") + "\t"
-		)
+		codec_video_name = lines_video[INDEX_OUTPUT_LINE_VIDEO_CODEC_LONG_NAME].decode("utf-8")
+
+		file_stream.write(codec_video_name + "\t")
+
+		# Followed by the video stream being a candidate to compress (to AV1/HEVC) or not
+		codec_video_compressed = ("Alliance for Open Media AV1", "H.265 / HEVC (High Efficiency Video Coding)")
+
+		if codec_video_name in codec_video_compressed:
+			# Video stream already in compressed format, so nothing to do
+			file_stream.write("N" + "\t")
+		else:
+			# Video stream can be compressed to AV1/HEVC
+			file_stream.write("Y" + "\t")
 
 		# Followed by the total number of streams [video, audio and subtitles (and possibly
 		# anything else!)]
@@ -479,209 +521,182 @@ def query_file(
 	path_probe,
 	mode_open,
 	dict_files_failed,
-	percentage_gather = False,
+	percentage_gather,
+	verbose
 ):
-	root, extension = os.path.splitext(path_file)
+	# We're only gathering a headcount of files to query. Hence return once we increment the count.
+	if percentage_gather:
+		with mutex_count:
+			query_file.total_count_percentage += 1
 
-	# Grab the part after the extension separator, and convert to lower case.
-	# This is to ensure we don't skip files with extensions that Windows sets
-	# to upper case. This is often the case with files downloaded from servers
-	# or torrents.
-	extension = (extension.rpartition(os.extsep)[2]).lower()
+		return
 
-	# Only process video files
-	if extension in (
-		"av1",
-		"avi",
-		"divx",
-		"mp4",
-		"mkv",
-		"m4v",
-		"mpg",
-		"mpeg",
-		"mov",
-		"rm",
-		"vob",
-		"wmv",
-		"flv",
-		"3gp",
-		"rmvb",
-		"webm",
-		"dat",
-		"mts",
-	):
-		# We're only gathering a headcount of files to query. Hence return once we increment the count.
-		if percentage_gather:
-			with mutex_count:
-				query_file.total_count_percentage += 1
+	with mutex_count:
+		query_file.total_count_files += 1
 
+	db_open_standalone_file = None
+
+	# Handle standalone files passed on the command line, instead of directories
+	if (not file_dimensions) and (not label_volume):
+		root_program, _ = os.path.splitext(sys.argv[0])
+
+		file_dimensions_path, label_volume = db_name_generate(
+			root_program, path_file
+		)
+
+		with mutex_file:
+			try:
+				# Open the db for the standalone file in question and keep so for the update below
+				file_dimensions = io.open(
+					file_dimensions_path, mode_open, encoding = "utf-8-sig"
+				)
+			except OSError as error_io_open:
+				# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
+				# console access mutex to prevent back and forth locking for successive statements in the block below
+				with mutex_console:
+					print("Error", sys.exc_info())
+					logging.error("Error", sys.exc_info())
+
+					print(
+						"Could not open '"
+						+ file_dimensions_path
+						+ "'. Aborting processing for '"
+						+ path_file
+						+ "'."
+					)
+					logging.error(
+						"Could not open '"
+						+ file_dimensions_path
+						+ "'. Aborting processing for '"
+						+ path_file
+						+ "'."
+					)
+
+				return
+			else:
+				db_open_standalone_file = True
+
+	# Update the db with the entry in question, rather than refreshing the whole file
+	if mode_open == "a":
+		if not query_file_update_check(path_file, file_dimensions):
 			return
 
-		with mutex_count:
-			query_file.total_count_files += 1
+	with mutex_time:
+		time_start = time.perf_counter_ns()
 
-		db_open_standalone_file = None
+	# Probe metadata
+	try:
+		# from subprocess import check_output
+		# TODO: For some files (.mts), more than one stream is picked up, despite asking
+		#       only for the first video stream (v:0). Need to fix this in a later version.
 
-		# Handle standalone files passed on the command line, instead of directories
-		if (not file_dimensions) and (not label_volume):
-			root_program, _ = os.path.splitext(sys.argv[0])
+		# ffprobe is capable of either probing only audio, or video in a single command. Until this is enhanced to be
+		# otherwise, we'll have to make two runs - one each for video and audio. Until then, oblige.
 
-			file_dimensions_path, label_volume = db_name_generate(
-				root_program, path_file
+		# Grab details for the video stream at index 0
+		output_video = subprocess.run(
+			(
+				path_probe,
+				"-v",
+				"error",
+				"-select_streams",
+				"v:0",
+				"-show_entries",
+				"format_tags=title:format=nb_streams,format_long_name:stream=codec_long_name,width,height:format=duration",
+				"-print_format",
+				"default=noprint_wrappers=1:nokey=1",
+				"-i",
+				path_file,
+			),
+			stdout = subprocess.PIPE,
+			check = True,
+			universal_newlines = True,
+		).stdout
+
+		# Grab details for the audio stream at index 0
+		output_audio = subprocess.run(
+			(
+				path_probe,
+				"-v",
+				"error",
+				"-select_streams",
+				"a:0",
+				"-show_entries",
+				"stream=channels,codec_long_name",
+				"-print_format",
+				"default=noprint_wrappers=1:nokey=1",
+				"-i",
+				path_file,
+			),
+			stdout = subprocess.PIPE,
+			check = True,
+			universal_newlines = True,
+		).stdout
+	except subprocess.CalledProcessError as error_probe:
+		# Update the dictionary with which file's probe failed and why
+		dict_files_failed.update({path_file: str(sys.exc_info())})
+
+		# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
+		# console access mutex to prevent back and forth locking for successive statements in the block below
+		with mutex_console:
+			print(error_probe.output)
+			print(error_probe.stderr)
+			print("Error querying '" + path_file + "' for metadata")
+			print("Error", sys.exc_info())
+
+			logging.error(error_probe.output)
+			logging.error(error_probe.stderr)
+			logging.error(
+				"Error querying file '" + path_file + "': " + str(sys.exc_info())
 			)
 
-			with mutex_file:
-				try:
-					# Open the db for the standalone file in question and keep so for the update below
-					file_dimensions = io.open(
-						file_dimensions_path, mode_open, encoding = "utf-8-sig"
-					)
-				except OSError as error_io_open:
-					# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
-					# console access mutex to prevent back and forth locking for successive statements in the block below
-					with mutex_console:
-						print("Error", sys.exc_info())
-						logging.error("Error", sys.exc_info())
+			print("Command that resulted in the exception: " + str(error_probe.cmd))
+			logging.info(
+				"Command that resulted in the exception: " + str(error_probe.cmd)
+			)
 
-						print(
-							"Could not open '"
-							+ file_dimensions_path
-							+ "'. Aborting processing for '"
-							+ path_file
-							+ "'."
-						)
-						logging.error(
-							"Could not open '"
-							+ file_dimensions_path
-							+ "'. Aborting processing for '"
-							+ path_file
-							+ "'."
-						)
+		show_toast("Error", "Failed to probe '" + path_file + "'. Check the log.")
+	# Handle any generic exception
+	except:
+		# Update the dictionary with which file's probe failed and why
+		dict_files_failed.update({path_file: str(sys.exc_info())})
 
-					return
-				else:
-					db_open_standalone_file = True
+		# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
+		# console access mutex to prevent back and forth locking for successive statements in the block below
+		with mutex_console:
+			print("Undefined exception")
+			print("Error querying '" + path_file + "' for metadata")
+			print("Error", sys.exc_info())
 
-		# Update the db with the entry in question, rather than refreshing the whole file
-		if mode_open == "a":
-			if not query_file_update_check(path_file, file_dimensions):
-				return
+			logging.error("Undefined exception")
+			logging.error(
+				"Error querying file '" + path_file + "': " + str(sys.exc_info())
+			)
 
+		show_toast("Error", "Failed to probe '" + path_file + "'. Check the log.")
+	else:
 		with mutex_time:
+			query_file.total_time_queried += time.perf_counter_ns() - time_start
 			time_start = time.perf_counter_ns()
 
-		# Probe metadata
-		try:
-			# from subprocess import check_output
-			# TODO: For some files (.mts), more than one stream is picked up, despite asking
-			#       only for the first video stream (v:0). Need to fix this in a later version.
+		with mutex_file:
+			# Strip off the trailing newline ffprobe spits in the output, before passing up
+			save_video_information(
+				file_dimensions,
+				path_file,
+				output_video.strip(),
+				output_audio.strip(),
+				label_volume,
+			)
 
-			# ffprobe is capable of either probing only audio, or video in a single command. Until this is enhanced to be
-			# otherwise, we'll have to make two runs - one each for video and audio. Until then, oblige.
+		with mutex_time:
+			query_file.total_time_db_save += time.perf_counter_ns() - time_start
 
-			# Grab details for the video stream at index 0
-			output_video = subprocess.run(
-				(
-					path_probe,
-					"-v",
-					"error",
-					"-select_streams",
-					"v:0",
-					"-show_entries",
-					"format_tags=title:format=nb_streams,format_long_name:stream=codec_long_name,width,height",
-					"-print_format",
-					"default=noprint_wrappers=1:nokey=1",
-					"-i",
-					path_file,
-				),
-				stdout = subprocess.PIPE,
-				check = True,
-				universal_newlines = True,
-			).stdout
+		with mutex_count:
+			# Keep count of the number of files processed
+			query_file.total_count_queried += 1
 
-			# Grab details for the audio stream at index 0
-			output_audio = subprocess.run(
-				(
-					path_probe,
-					"-v",
-					"error",
-					"-select_streams",
-					"a:0",
-					"-show_entries",
-					"stream=channels,codec_long_name",
-					"-print_format",
-					"default=noprint_wrappers=1:nokey=1",
-					"-i",
-					path_file,
-				),
-				stdout = subprocess.PIPE,
-				check = True,
-				universal_newlines = True,
-			).stdout
-		except subprocess.CalledProcessError as error_probe:
-			# Update the dictionary with which file's probe failed and why
-			dict_files_failed.update({path_file: str(sys.exc_info())})
-
-			# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
-			# console access mutex to prevent back and forth locking for successive statements in the block below
-			with mutex_console:
-				print(error_probe.output)
-				print(error_probe.stderr)
-				print("Error querying '" + path_file + "' for metadata")
-				print("Error", sys.exc_info())
-
-				logging.error(error_probe.output)
-				logging.error(error_probe.stderr)
-				logging.error(
-					"Error querying file '" + path_file + "': " + str(sys.exc_info())
-				)
-
-				print("Command that resulted in the exception: " + str(error_probe.cmd))
-				logging.info(
-					"Command that resulted in the exception: " + str(error_probe.cmd)
-				)
-
-			show_toast("Error", "Failed to probe '" + path_file + "'. Check the log.")
-		# Handle any generic exception
-		except:
-			# Update the dictionary with which file's probe failed and why
-			dict_files_failed.update({path_file: str(sys.exc_info())})
-
-			# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
-			# console access mutex to prevent back and forth locking for successive statements in the block below
-			with mutex_console:
-				print("Undefined exception")
-				print("Error querying '" + path_file + "' for metadata")
-				print("Error", sys.exc_info())
-
-				logging.error("Undefined exception")
-				logging.error(
-					"Error querying file '" + path_file + "': " + str(sys.exc_info())
-				)
-
-			show_toast("Error", "Failed to probe '" + path_file + "'. Check the log.")
-		else:
-			with mutex_time:
-				query_file.total_time_queried += time.perf_counter_ns() - time_start
-				time_start = time.perf_counter_ns()
-
-			with mutex_file:
-				# Strip off the trailing newline ffprobe spits in the output, before passing up
-				save_video_information(
-					file_dimensions,
-					path_file,
-					output_video.strip(),
-					output_audio.strip(),
-					label_volume,
-				)
-
-			with mutex_time:
-				query_file.total_time_db_save += time.perf_counter_ns() - time_start
-
-			with mutex_count:
-				# Keep count of the number of files processed
-				query_file.total_count_queried += 1
-
+		if verbose:
 			# print_and_log_spacer(query_file.count, path_file)
 			lock_console_print_and_log(
 				"Got metadata for file# "
@@ -696,18 +711,18 @@ def query_file(
 				+ "'\n"
 			)
 
-			# If the database was opened for a standalone file, close it
-			if db_open_standalone_file:
-				with mutex_file:
-					file_dimensions.close()
+		# If the database was opened for a standalone file, close it
+		if db_open_standalone_file:
+			with mutex_file:
+				file_dimensions.close()
 
-		with mutex_count:
-			if query_file.total_count_percentage:
-				with mutex_console:
-					percentage_completion_print(
-						query_file.total_count_queried,
-						query_file.total_count_percentage,
-					)
+	with mutex_count:
+		if query_file.total_count_percentage:
+			with mutex_console:
+				percentage_completion_print(
+					query_file.total_count_queried,
+					query_file.total_count_percentage,
+				)
 
 
 # Probe all audio streams
@@ -806,13 +821,13 @@ def file_dimensions_sort(file_dimensions_path):
 			"Sorted '"
 			+ file_dimensions_path
 			+ "' in descending order of resolution stats in "
-			+ total_time_in_hms_get(time_end - time_start)
+			+ total_time_in_hms_get_for_seconds_nano(time_end - time_start)
 		)
 		logging.info(
 			"Sorted '"
 			+ file_dimensions_path
 			+ "' in descending order of resolution stats in "
-			+ total_time_in_hms_get(time_end - time_start)
+			+ total_time_in_hms_get_for_seconds_nano(time_end - time_start)
 		)
 
 	return error
@@ -832,7 +847,7 @@ def sound_utf8_warning():
 
 
 # Parse command line arguments and return option and/or values of action
-def cmd_line_parse(opt_update, opt_merge, opt_percentage):
+def cmd_line_parse(opt_update, opt_merge, opt_percentage, opt_nomedia, opt_verbose):
 	parser = argparse.ArgumentParser(
 		description = "Reads metadata (resolution, size, title, etc.) from video files and dumps all in a tab "
 		              "separated values (TSV) file, which can be opened with any program dealing in spreadsheets",
@@ -846,6 +861,26 @@ def cmd_line_parse(opt_update, opt_merge, opt_percentage):
 		default = None,
 		dest = "percentage",
 		help = "Show the percentage of files completed (not the actual data processed; just the files",
+	)
+
+	parser.add_argument(
+		"-n",
+		opt_nomedia,
+		required = False,
+		action = "store_true",
+		default = None,
+		dest = "nomedia",
+		help = "Create a .nomedia empty file for programs like Kodi to ignore directories filtered here",
+	)
+
+	parser.add_argument(
+		"-v",
+		opt_verbose,
+		required = False,
+		action = "store_true",
+		default = None,
+		dest = "verbose",
+		help = "Be verbose in output and log",
 	)
 
 	db_operate = parser.add_mutually_exclusive_group()
@@ -874,6 +909,8 @@ def cmd_line_parse(opt_update, opt_merge, opt_percentage):
 		result_parse.update_metadata_db,
 		result_parse.merge_metadata,
 		result_parse.percentage,
+		result_parse.nomedia,
+		result_parse.verbose,
 		files_to_process,
 	)
 
@@ -887,6 +924,7 @@ def threads_query(
 	mode_open,
 	dict_files_failed,
 	percentage_gather,
+	verbose
 ):
 	with ThreadPool(COUNT_THREADS) as pool:
 		pool.starmap(
@@ -899,8 +937,38 @@ def threads_query(
 				itertools.repeat(mode_open),
 				itertools.repeat(dict_files_failed),
 				itertools.repeat(percentage_gather),
+				itertools.repeat(verbose)
 			),
 		)
+
+
+# We were asked to create a .nomedia empty file under the filtered directory to assist
+# programs like Kodi to skip parsing its content. Oblige.
+def nomedia_file_create(filters, path_dir, sub_directories, verbose):
+	paths_relative_nomedia = [sub_directory for sub_directory in sub_directories if sub_directory in filters]
+
+	if paths_relative_nomedia:
+		for path_relative_nomedia in paths_relative_nomedia:
+			path_nomedia = os.path.join(path_dir, path_relative_nomedia, ".nomedia")
+
+			try:
+				Path(path_nomedia).touch(mode = 0o666, exist_ok = False)
+			except FileExistsError:
+				if verbose:
+					# For reasons of efficiency, instead of calling lock_console_print_and_log(), we explicitly lock the
+					# console access mutex to prevent back and forth locking for successive statements in the block below
+					with mutex_console:
+						print("'" + path_nomedia + "' already exists\n")
+						logging.info("'" + path_nomedia + "' already exists\n")
+			except:
+				if verbose:
+					with mutex_console:
+						print("\aUnhandled exception!\n")
+						print("Error", sys.exc_info())
+			else:
+				if verbose:
+					with mutex_console:
+						print("Created '" + path_nomedia + "''\n")
 
 
 # Recursively process every directory passed on the command line
@@ -913,37 +981,76 @@ def process_dir(
 	list_files_from_dir,
 	dict_files_failed,
 	percentage_gather,
+	nomedia_create,
+	verbose
 ):
-	# A filter that tells not to walk through over the files in these directories named so.
-	# TODO: If a sub-directory exists within any of the named ones in this list, it would still
-	# have to be explicitly added.
-	filters = ("Extras", "Featurettes", "Soundtrack", "Storyboards")
-
 	# Only append the files to a list if it's empty. If we had been asked to report percentage,
 	# the list would already be populated with paths of files to process.
 	if not list_files_from_dir:
+		# A filter that tells not to walk through over the files in these directories named so.
+		# TODO: If a sub-directory exists within any of the named ones in this list, it would still
+		# have to be explicitly added. Could this be enhanced to be filtered without recursing?
+		filters = (
+			"Deleted Scenes",
+			"@eaDir",
+			"External AC3",
+			"Extras",
+			"Featurettes",
+			"Interviews",
+			"Select Soundbites",
+			"Soundtrack",
+			"Storyboards",
+			"Trailers"
+		)
+
 		# If it's a directory worth sniffing, walk through for files below
-		for path_dir, _, file_names in os.walk(path):
-			# Skip building resolution data for insignificant files, like found under "Extras",
-			# or "Featurettes". These contain behind the scenes, deleted scenes or commentary.
-			if os.path.basename(path_dir) not in filters:
-				for file_name in file_names:
+		for path_dir, sub_directories, file_names in os.walk(path, topdown = True):
+			# Since we've anyway hit a filtered directory, do we need to create a .nomedia file
+			# for Kodi and cousins?
+			if nomedia_create:
+				nomedia_file_create(filters, path_dir, sub_directories, verbose)
+
+			# Prune directories to be filtered
+			sub_directories[:] = [sub_directory for sub_directory in sub_directories if sub_directory not in filters]
+
+			for file_name in file_names:
+				name, extension = os.path.splitext(file_name)
+
+				# Grab the part after the extension separator, and convert to lower case.
+				# This is to ensure we don't skip files with extensions that Windows sets
+				# to upper case. This is often the case with files downloaded from servers
+				# or torrents.
+				extension = (extension.rpartition(os.extsep)[2]).lower()
+
+				# Only process video files
+				if extension in (
+					"av1",
+					"avi",
+					"divx",
+					"mp4",
+					"mkv",
+					"m4v",
+					"mpg",
+					"mpeg",
+					"mov",
+					"rm",
+					"vob",
+					"wmv",
+					"flv",
+					"3gp",
+					"rmvb",
+					"webm",
+					"dat",
+					"mts",
+				):
 					list_files_from_dir.append(os.path.join(path_dir, file_name))
-			else:
-				print(
-					"Directory filter '"
-					+ os.path.basename(path_dir)
-					+ "' flagged; skipping '"
-					+ path_dir
-					+ "'\n"
-				)
-				logging.info(
-					"Directory filter '"
-					+ os.path.basename(path_dir)
-					+ "' flagged; skipping '"
-					+ path_dir
-					+ "'\n"
-				)
+
+		if verbose:
+			print("List of files to query:\n")
+			logging.info("List of files to query:\n")
+
+			print("\n".join(list_files_from_dir))
+			logging.info("\n".join(list_files_from_dir))
 
 	threads_query(
 		list_files_from_dir,
@@ -953,7 +1060,157 @@ def process_dir(
 		mode_open,
 		dict_files_failed,
 		percentage_gather,
+		verbose
 	)
+
+
+# Strip white space (both leading and trailing) as the elements would've
+# been padded for alignment in the metadata file
+def list_strings_strip(list_strings):
+	return ([string.strip() for string in list_strings])
+
+
+# Parses the file name stripping the preceding path to extract the file name
+# and year of release. The extension should be already stripped by the caller.
+def parse_file_name_from_path(root):
+	# Grab only the file name without the preceding path. The extension has already
+	# been stripped off by the caller.
+	title = os.path.basename(root)
+
+	# Extract title from the year used in the naming convention "[yyyy] Title of the movie"
+	# If the movie is 3D, the title would contain the string at the name's tail, viz., "[yyyy] Title of the movie [3D]"
+	# If the movie is explicitly named as a 4K video, it would be named as "[yyyy] Title of the movie [4K]"
+	# If the movie is 3D and 4K explicitly, it would be named "[yyyy] Title of the movie [3D][4K]"
+	# If the movie is encoded with AV1 and named explicitly, it would be named "[yyyy] Title of the movie [3D][AV1][4K]"
+
+	identifiers = ("[4K]", "[AV1]", "[3D]")
+
+	for identifier in identifiers:
+		title = "".join(title.split(identifier))
+
+	# If we find year information in the file name, tokenize the year and video title
+	release_year = title.partition("[")[2]
+
+	if release_year:
+		release_year = release_year.partition("]")[0]
+
+		# The file name adheres to the convention used. Grab the name alone.
+		title = title.partition("]")[2]
+
+	# Strip leading and trailing whitespace
+	title = title.strip()
+
+	return title, release_year
+
+
+# Detects variants/duplicates of a video file, and stores each video file's
+# metadata parameters parsed from a TSV file provided as argument on the
+# command line, into a dictionary. Each variant's parameters are appended
+# as a value tuple to the corresponding dictionary entry's title key.
+# For example, a dictionary entry for a movie with two variants would
+# look like below when populated (where 'key' is the movie title):
+# dictionary[key] = { (mov_1_wd, mov_1_ht, mov_1_sz, mov_1_drv, mov_1_path),
+#                     (mov_2_wd, mov_2_ht, mov_2_sz, mov_2_drv, mov_2_path)
+#                   }
+#
+# Note: Since the title in the video file's actual metadata could be unset,
+# or set to something other than what the file name reflects, the file name
+# would be used to identify variants/duplicates. So the title in this function
+# implies what was parsed from the filename.
+def parse_metadata_file_tsv(file_metadata_db, dict_file_names):
+	with codecs.open(file_metadata_db, "r", "utf-8-sig") as file_metadata:
+		for line in csv.reader(file_metadata, delimiter = "\t"):
+			# Assign metadata fields from the line we parsed for a video file
+			width, height, duration, size, *_, volume, path = line
+			tuple_metadata = (width, height, duration, size, volume, path)
+			tuple_metadata = list_strings_strip(tuple_metadata)
+
+			path, _ = os.path.splitext(path)
+
+			title, year = parse_file_name_from_path(path)
+
+			# Append the tuple of metadata parameters to the dictionary entry
+			# for the title at hand
+			dict_file_names[title].append(tuple_metadata)
+
+			# Build a list of titles for reporting use. The titles in the list
+			# will uniquely index into the dictionary during reporting. This is
+			# done ONLY ONCE for a particular title.
+			if len(dict_file_names[title]) == 1:
+				# Save the indexing instrument (title) in the tuple passed in,
+				# for reporting use
+				list_file_names.append(title)
+
+
+# Reports likely variants or duplicates that have the same file name (barring
+# identifiers)
+def variant_report(dict_file_names):
+	for title in list_file_names:
+		# The number of variants registered in the dictionary of lists
+		# for a particular title
+		count_variant = len(dict_file_names[title])
+
+		# Adjust the count which will be decremented in the loop below,
+		# as it'd be used for indexing into the dictionary
+		count_variant -= 1
+
+		# If a video file has more than one variant, report so
+		if count_variant:
+			print("\nThe following variants exist for \'" + title + "\':\n")
+			logging.info("The following variants exist for \'" + title + "\':\n")
+
+			# Print headers
+			print("{:>5}".format("Width"), end = ' | ')
+			print("{:>6}".format("Height"), end = ' | ')
+			print("{:<11}".format("Duration"), end = ' | ')
+			print("{:>10}".format("Size"), end = ' | ')
+			print("{:<15}".format("Volume"), end = ' | ')
+			print("Path")
+
+			# Same shit for logging
+			logging.info("{:>5}".format("Width") + " | " + "{:>6}".format("Height") + " | " + "{:<11}".format(
+				"Duration") + " | " + "{:>10}".format("Size") + " | " + "{:<15}".format("Volume") + " | " + "Path")
+
+			# Followed by separators
+
+			# Width of the width field
+			print('-' * 6, end = '|')
+
+			# Width of the height field
+			print('-' * 8, end = '|')
+
+			# Width of the duration field
+			print('-' * 13, end = '|')
+
+			# Width of the size field
+			print('-' * 12, end = '|')
+
+			# Width of the volume field
+			print('-' * 17, end = '|')
+
+			# Width of the path field
+			print('-' * 5)
+
+			logging.info('-' * 6 + "|" + '-' * 8 + "|" + '-' * 13 + "|" + '-' * 12 + "|" + '-' * 17 + "|" + '-' * 4)
+
+			while count_variant >= 0:
+				(width, height, duration, size, volume, path) = dict_file_names[title][count_variant]
+
+				# Followed by parameter values
+				print("{:>5}".format(width), end = ' | ')
+				print("{:>6}".format(height), end = ' | ')
+				print("{:<11}".format(duration), end = ' | ')
+				print("{:>10}".format(size), end = ' | ')
+				print("{:<15}".format(volume), end = ' | ')
+				print(path)
+
+				logging.info("{:>5}".format(width) + " | " + "{:>6}".format(height) + " | " + "{:<11}".format(
+					duration) + " | " + "{:>10}".format(size) + " | " + "{:<15}".format(volume) + " | " + path)
+
+				count_variant -= 1
+
+			print("\n")
+			logging.info("\n")
 
 
 # Process every path (irrespective of being a directory, or file) passed on the command line
@@ -963,17 +1220,19 @@ def process_path(
 	path_probe,
 	mode_open,
 	list_files_from_dir,
-	percentage_gather = False,
+	percentage_gather,
+	nomedia_create,
+	verbose = False
 ):
 	dict_files_failed = {}
 	exit_code = 0
 	file_standalone_path = None
 
 	for path in files_to_process:
-		file_dimensions_path, label_volume = db_name_generate(root, path)
+		file_metadata_db, label_volume = db_name_generate(root, path)
 
 		with io.open(
-			file_dimensions_path, mode_open, encoding = "utf-8-sig"
+			file_metadata_db, mode_open, encoding = "utf-8-sig"
 		) as file_dimensions:
 			if os.path.isdir(path):
 				process_dir(
@@ -985,6 +1244,8 @@ def process_path(
 					list_files_from_dir,
 					dict_files_failed,
 					percentage_gather,
+					nomedia_create,
+					verbose
 				)
 			else:
 				# We got a standalone file, process it below
@@ -1003,6 +1264,7 @@ def process_path(
 					mode_open,
 					dict_files_failed,
 					percentage_gather,
+					verbose
 				)
 			else:
 				if file_standalone_path:
@@ -1021,7 +1283,7 @@ def process_path(
 					)
 
 			# Once we're done writing dimensions for processed videos, sort the output file
-			if file_dimensions_sort(file_dimensions_path):
+			if file_dimensions_sort(file_metadata_db):
 				exit_code = 1
 
 			# Print statistics on how long we took to query
@@ -1035,9 +1297,9 @@ def process_path(
 					+ "/"
 					+ str(query_file.total_count_files)
 					+ " files in "
-					+ total_time_in_hms_get(query_file.total_time_queried / 10)
+					+ total_time_in_hms_get_for_seconds_nano(query_file.total_time_queried / 10)
 					+ " and took "
-					+ total_time_in_hms_get(query_file.total_time_db_save / 10)
+					+ total_time_in_hms_get_for_seconds_nano(query_file.total_time_db_save / 10)
 					+ " to commit details to the database"
 				)
 				logging.info(
@@ -1046,13 +1308,22 @@ def process_path(
 					+ "/"
 					+ str(query_file.total_count_files)
 					+ " files in "
-					+ total_time_in_hms_get(query_file.total_time_queried / 10)
+					+ total_time_in_hms_get_for_seconds_nano(query_file.total_time_queried / 10)
 					+ " and took "
-					+ total_time_in_hms_get(query_file.total_time_db_save / 10)
+					+ total_time_in_hms_get_for_seconds_nano(query_file.total_time_db_save / 10)
 					+ " to commit details to the database"
 				)
 			else:
 				print("No files to query under '" + path + "'")
+
+		if verbose:
+			# Report variants/duplicates
+			from collections import defaultdict
+
+			dict_file_names = defaultdict(list)
+
+			parse_metadata_file_tsv(file_metadata_db, dict_file_names)
+			variant_report(dict_file_names)
 
 	# Print a summary of failures
 	if dict_files_failed:
@@ -1114,9 +1385,11 @@ def db_metadata_merge(root, files_to_process):
 			# Else, it would break the merged file.
 			# handle_db_header.write("{:>4}".format("Width") + "\t")
 			# handle_db_header.write("{:>4}".format("Height") + "\t")
+			# handle_db_header.write("{:>12}".format("Duration (in s)") + "\t")
 			# handle_db_header.write("{:>10}".format("Size") + "\t")
 			# handle_db_header.write("{:>11}".format("Raw Size") + "\t")
 			# handle_db_header.write("{:<50}".format("Video Codec Name") + "\t")
+			# handle_db_header.write("{:>1}".format("AV1/HEVC Compression Candidate") + "\t")
 			# handle_db_header.write("{:>2}".format("Total # of Streams") + "\t")
 			# handle_db_header.write("{:<35}".format("Container Name") + "\t")
 			# handle_db_header.write("{:>1}".format("# of Audio Channels (@Index 0)") + "\t")
@@ -1128,9 +1401,11 @@ def db_metadata_merge(root, files_to_process):
 
 			handle_db_header.write("Width" + "\t")
 			handle_db_header.write("Height" + "\t")
+			handle_db_header.write("Duration (in s)" + "\t")
 			handle_db_header.write("Size" + "\t")
 			handle_db_header.write("Raw Size" + "\t")
 			handle_db_header.write("Video Codec Name" + "\t")
+			handle_db_header.write("AV1/HEVC Compression Candidate" + "\t")
 			handle_db_header.write("Total # of Streams" + "\t")
 			handle_db_header.write("Container Name" + "\t")
 			handle_db_header.write("# of Audio Channels (@Index 0)" + "\t")
@@ -1209,13 +1484,15 @@ def main(argv):
 		opt_update = "--update-metadata-db"
 		opt_merge = "--merge-metadata"
 		opt_percentage = "--percentage-completion"
+		opt_nomedia = "--nomedia-create"
+		opt_verbose = "--verbose"
 
-		update_metadata, merge_metadata, percentage_show, files_to_process = (
-			cmd_line_parse(opt_update, opt_merge, opt_percentage)
+		update_metadata, merge_metadata, percentage_show, nomedia_create, verbose, files_to_process = (
+			cmd_line_parse(opt_update, opt_merge, opt_percentage, opt_nomedia, opt_verbose)
 		)
 
 		if files_to_process:
-			# Remove duplicates from the source path(s)
+			# Remove duplicates from the source path(s) from the command line
 			files_to_process = [*set(files_to_process)]
 
 			if percentage_show and (update_metadata or merge_metadata):
@@ -1284,6 +1561,7 @@ def main(argv):
 								mode_open,
 								list_files_from_dir,
 								percentage_gather,
+								verbose
 							)
 
 							# We've already gathered the headcount, so flag accordingly
@@ -1299,6 +1577,8 @@ def main(argv):
 							mode_open,
 							list_files_from_dir,
 							percentage_gather,
+							nomedia_create,
+							verbose
 						):
 							exit_code = 1
 					else:
